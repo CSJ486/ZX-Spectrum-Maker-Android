@@ -15,8 +15,23 @@ android {
         versionName = "1.5.2.9"
     }
 
+    // Release signing: reads a keystore from environment variables (set by the GitHub workflow).
+    // Without them the release APK stays unsigned and cannot be installed.
+    val keystorePath: String? = System.getenv("KEYSTORE_FILE")
+    signingConfigs {
+        if (keystorePath != null && File(keystorePath).exists()) {
+            create("release") {
+                storeFile = File(keystorePath)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
