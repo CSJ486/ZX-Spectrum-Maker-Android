@@ -3,8 +3,12 @@ name: Build Android APK
 on:
   push:
     branches: [ main, master ]
+    tags: [ 'v*' ]
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -17,23 +21,66 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      # GitHub's ubuntu runners already include the Android SDK, so the old
-      # android-actions/setup-android step (which fails on the removed 'tools' package) is not needed.
+      # GitHub's ubuntu runners already include the Android SDK.
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
-      # Installs Gradle 8.9 itself, so the build does not depend on gradle/wrapper/gradle-wrapper.jar
-      # (which is easy to lose when uploading files through the GitHub website).
+      # Installs Gradle 8.9 itself, so the build does not depend on gradle-wrapper.jar
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+      # Signing key for the release APK.
+      # Best: add repository secrets KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
+      # (see README). If they are missing, a throw-away key is generated so the APK is still installable,
+      # but every build then has a different signature (you must uninstall before installing the next one).
+      - name: Prepare signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD_SECRET: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS_SECRET: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD_SECRET: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          KS="$RUNNER_TEMP/release.jks"
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$KS"
+            echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD_SECRET" >> "$GITHUB_ENV"
+            echo "KEY_ALIAS=$KEY_ALIAS_SECRET" >> "$GITHUB_ENV"
+            echo "KEY_PASSWORD=$KEY_PASSWORD_SECRET" >> "$GITHUB_ENV"
+            echo "Using your keystore from repository secrets."
+          else
+            PW="zxtape-temp-$RANDOM$RANDOM"
+            keytool -genkeypair -keystore "$KS" -storetype PKCS12 -alias zxtape \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$PW" -keypass "$PW" \
+              -dname "CN=ZX Tape Loader, O=Unofficial, C=ID"
+            echo "KEYSTORE_PASSWORD=$PW" >> "$GITHUB_ENV"
+            echo "KEY_ALIAS=zxtape" >> "$GITHUB_ENV"
+            echo "KEY_PASSWORD=$PW" >> "$GITHUB_ENV"
+            echo "::warning::No keystore secrets found - signed the release APK with a temporary key."
+          fi
+          echo "KEYSTORE_FILE=$KS" >> "$GITHUB_ENV"
 
-      - name: Upload APK
+      - name: Build debug and release APKs
+        run: gradle assembleDebug assembleRelease --stacktrace
+
+      - name: Verify release signature
+        run: |
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --verbose app/build/outputs/apk/release/app-release.apk
+
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: ZXTapeLoader-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: ZXTapeLoader-apks
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+
+      # Pushing a tag such as v1.5.2.9 also publishes the APK on the repository's Releases page
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/outputs/apk/release/app-release.apk
