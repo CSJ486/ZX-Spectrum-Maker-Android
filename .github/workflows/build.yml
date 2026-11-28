@@ -97,8 +97,9 @@ jobs:
       - name: Build release APK
         id: release
         continue-on-error: true
+        shell: bash
         working-directory: ${{ env.PROJECT_DIR }}
-        run: gradle assembleRelease --stacktrace
+        run: gradle assembleRelease --stacktrace 2>&1 | tee "$RUNNER_TEMP/release.log"
 
       - name: Verify release signature
         if: steps.release.outcome == 'success'
@@ -136,5 +137,8 @@ jobs:
       - name: Fail the job if the release build failed
         if: steps.release.outcome == 'failure'
         run: |
-          echo "::error::The release APK failed to build (debug APK was still built). See the 'Build release APK' step."
+          echo "=== Why the release build failed ==="
+          grep -n -A12 "What went wrong" "$RUNNER_TEMP/release.log" | head -40 || true
+          REASON=$(grep -A6 "What went wrong" "$RUNNER_TEMP/release.log" | head -8 | tr '\n' ' ')
+          echo "::error title=Release build failed::${REASON:-See the 'Build release APK' step.} (the debug APK was still built)"
           exit 1
