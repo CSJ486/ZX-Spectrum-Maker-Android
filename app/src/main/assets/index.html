@@ -18,19 +18,26 @@
       --spectrum-border: #334155;
     }
 
+    /* Bundled font file: place SFProDisplay-Bold.ttf in a "fonts" folder next to this HTML file */
+    @font-face {
+      font-family: "SF Pro Display Bold";
+      src: url("fonts/SFProDisplay-Bold.ttf") format("truetype");
+      font-weight: 700;
+      font-style: normal;
+      font-display: swap;
+    }
     :root {
+      --font-bold-face: "SF Pro Display Bold", -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", system-ui, "Segoe UI", Roboto, Arial, sans-serif;
       --font-sf-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", "Inter", system-ui, "Segoe UI", Roboto, Arial, sans-serif;
       --font-sf-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Inter", system-ui, "Segoe UI", Roboto, Arial, sans-serif;
-      --font-sf-rounded: ui-rounded, "SF Pro Rounded", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Nunito", system-ui, "Segoe UI", Roboto, sans-serif;
-      --font-ny-serif: ui-serif, "New York", "Iowan Old Style", Georgia, "Times New Roman", serif;
-      --font-sf-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-      --font-system: system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       --app-font: var(--font-sf-display);
-      --app-font-scale: 100%;
     }
-    html { font-size: var(--app-font-scale); }
     body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; letter-spacing: -0.011em; font-feature-settings: "kern" 1, "liga" 1; }
     h1, .card-title { letter-spacing: -0.022em; font-weight: 700; }
+    /* Headings, titles, tabs, buttons and labels use the bundled SF Pro Display Bold */
+    h1, h2, h3, .card-title, .tab-btn, button, label, strong, b, th,
+    .beta-pill, .manual-header, .social-title, .tape-block-name, .asm-log-title,
+    .log-chip, .log-tool, .dither-version-btn, .mode-badge { font-family: var(--font-bold-face); }
     * {
       box-sizing: border-box;
       margin: 0;
@@ -383,7 +390,6 @@
     .log-msg { flex: 1; word-break: break-word; }
     .log-line { flex: none; color: var(--accent-color); cursor: pointer; text-decoration: underline; background: none; border: none; font: inherit; }
     .asm-log-empty { padding: 14px; text-align: center; color: var(--muted-text); font-size: 0.78rem; }
-    .font-preview { margin-top: 8px; padding: 10px 12px; border: 1px dashed var(--border-color); border-radius: 10px; font-size: 1.05rem; }
   </style>
 </head>
 <body>
@@ -1185,24 +1191,6 @@
       <div class="card-title">
         <span>Extras &amp; Fun</span>
         <span style="font-size: 0.75rem; color: var(--muted-text)">Toys</span>
-      </div>
-
-      <div class="control-group" style="margin-bottom: 12px;">
-        <label for="font-style-select">Font Style</label>
-        <select id="font-style-select" onchange="setFontStyle(this.value)">
-          <option value="sf-display">SF Pro Display (default)</option>
-          <option value="sf-text">SF Pro Text</option>
-          <option value="sf-rounded">SF Pro Rounded</option>
-          <option value="ny-serif">New York (Serif)</option>
-          <option value="sf-mono">SF Mono (Monospace)</option>
-          <option value="system">System UI</option>
-        </select>
-        <div class="btn-grid" style="margin-top: 8px;">
-          <button class="action-btn secondary-btn" type="button" onclick="adjustFontScale(-10)">A&minus; Smaller</button>
-          <button class="action-btn secondary-btn" type="button" onclick="adjustFontScale(10)">A+ Larger</button>
-        </div>
-        <div class="font-preview" id="font-preview">The quick brown fox loads 48K tapes &mdash; 0123456789</div>
-        <div style="font-size: 0.72rem; color: var(--muted-text); margin-top: 6px;">SF Pro is an Apple system font: it shows on iPhone, iPad and Mac. Other devices fall back to Inter / system fonts automatically.</div>
       </div>
 
       <div class="switch-container" style="border-bottom: 1px solid var(--border-color); padding-bottom: 16px; margin-bottom: 12px;">
@@ -3780,30 +3768,6 @@
       showCompileStatus(`Compiled successfully! Autostart at line ${autostart}. Output format: ${tapeFormat.toUpperCase()}.`, false);
     }
 
-
-    /* ================= v1.5.2.9: Font styles ================= */
-    const FONT_STYLES = { 'sf-display': '--font-sf-display', 'sf-text': '--font-sf-text', 'sf-rounded': '--font-sf-rounded', 'ny-serif': '--font-ny-serif', 'sf-mono': '--font-sf-mono', 'system': '--font-system' };
-    let fontScalePct = 100;
-    function setFontStyle(key, silent) {
-      if (!FONT_STYLES[key]) key = 'sf-display';
-      document.documentElement.style.setProperty('--app-font', `var(${FONT_STYLES[key]})`);
-      const sel = document.getElementById('font-style-select');
-      if (sel) sel.value = key;
-      try { localStorage.setItem('zx-font-style', key); } catch (e) { /* ignore */ }
-      if (!silent && typeof playUiClick === 'function') { try { playUiClick(); } catch (e) { /* ignore */ } }
-    }
-    function adjustFontScale(delta) {
-      fontScalePct = Math.max(80, Math.min(130, fontScalePct + delta));
-      document.documentElement.style.setProperty('--app-font-scale', fontScalePct + '%');
-      try { localStorage.setItem('zx-font-scale', String(fontScalePct)); } catch (e) { /* ignore */ }
-    }
-    (function initFontPrefs() {
-      let k = 'sf-display', sc = 100;
-      try { k = localStorage.getItem('zx-font-style') || k; sc = parseInt(localStorage.getItem('zx-font-scale'), 10) || sc; } catch (e) { /* ignore */ }
-      fontScalePct = Math.max(80, Math.min(130, sc));
-      document.documentElement.style.setProperty('--app-font-scale', fontScalePct + '%');
-      setFontStyle(k, true);
-    })();
 
     /* ================= v1.5.2.9: ASM compile log ================= */
     let asmLogEntries = [];
