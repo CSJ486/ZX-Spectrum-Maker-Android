@@ -18,26 +18,29 @@
       --spectrum-border: #334155;
     }
 
-    /* Bundled font file: place SFProDisplay-Bold.ttf in a "fonts" folder next to this HTML file */
+    /* Bundled fonts: keep SFProDisplay-Regular.ttf and SFProDisplay-Bold.ttf in a "fonts" folder next to this HTML file */
     @font-face {
-      font-family: "SF Pro Display Bold";
+      font-family: "SFProDisplay";
+      src: url("fonts/SFProDisplay-Regular.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "SFProDisplay";
       src: url("fonts/SFProDisplay-Bold.ttf") format("truetype");
       font-weight: 700;
       font-style: normal;
       font-display: swap;
     }
     :root {
-      --font-bold-face: "SF Pro Display Bold", -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", system-ui, "Segoe UI", Roboto, Arial, sans-serif;
       --font-sf-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", "Inter", system-ui, "Segoe UI", Roboto, Arial, sans-serif;
       --font-sf-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Inter", system-ui, "Segoe UI", Roboto, Arial, sans-serif;
-      --app-font: var(--font-sf-display);
+      /* Bundled SF Pro Display (regular + bold) first, then the system fallbacks */
+      --app-font: "SFProDisplay", var(--font-sf-display);
     }
     body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; letter-spacing: -0.011em; font-feature-settings: "kern" 1, "liga" 1; }
     h1, .card-title { letter-spacing: -0.022em; font-weight: 700; }
-    /* Headings, titles, tabs, buttons and labels use the bundled SF Pro Display Bold */
-    h1, h2, h3, .card-title, .tab-btn, button, label, strong, b, th,
-    .beta-pill, .manual-header, .social-title, .tape-block-name, .asm-log-title,
-    .log-chip, .log-tool, .dither-version-btn, .mode-badge { font-family: var(--font-bold-face); }
     * {
       box-sizing: border-box;
       margin: 0;
@@ -396,7 +399,7 @@
 
   <header>
     <h1 onclick="handleLogoTap()">ZX Mobile Tape Loader <span class="beta-pill">v1.5.2.9-RELEASE</span></h1>
-    <p>Retro-Computing Image Converter &amp; Simulator • v1.5.1-release</p>
+    <p>Retro-Computing Image Converter &amp; Simulator • v1.5.2.9-release</p>
   </header>
 
   <div class="main-container">
@@ -1375,7 +1378,7 @@
         
         <h4 style="margin-top: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">Tech Stack</h4>
         <p style="margin-top: 8px;">Built entirely with Vanilla HTML5, CSS3, and JavaScript. Zero external libraries. Utilizes the Canvas API for pixel-perfect attribute clash rendering and the Web Audio API for highly accurate cassette tape synthesis and Schmitt-trigger edge-detection decoding.</p>
-        <p style="margin-top: 8px; color: var(--muted-text);"><strong>Release v1.5.1.1</strong> keeps downloads in the browser on Android and improves the export flow, BASIC workflow controls, symbol filtering, gamma tuning, and smoother Spectrum refresh.</p>
+        <p style="margin-top: 8px; color: var(--muted-text);"><strong>Release v1.5.2.9</strong> adds the bundled SF Pro Display font, an ASM compile log with errors, warnings and success messages, and live ASM checking, on top of the Spectrumizer, BASIC editor and tape tools from earlier releases.</p>
         <p style="margin-top: 8px; color: var(--muted-text);"><strong>Version 1.5.1.1-release</strong> adds new Spectrumizer, BASIC Editor, and ASM Converter workflow tools with cleaner result views.</p>
         <p style="margin-top: 8px; color: var(--muted-text);"><strong>Planned features</strong> are tracked in the Manual tab so this HTML file also works as a live roadmap.</p>
 
