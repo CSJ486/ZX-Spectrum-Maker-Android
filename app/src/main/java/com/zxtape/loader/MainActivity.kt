@@ -2,17 +2,11 @@ package com.zxtape.loader
 
 import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
-import android.content.ContentValues
-import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.os.Environment
 import android.os.Handler
 import android.os.Looper
-import android.provider.MediaStore
 import android.util.Base64
 import android.view.View
 import android.webkit.JavascriptInterface
@@ -27,11 +21,8 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.webkit.WebViewAssetLoader
-import java.io.File
-import java.io.FileOutputStream
 
 /**
  * Hosts the single-file ZX Spectrum Tape Loader web app (assets/index.html) in a WebView.
@@ -57,17 +48,56 @@ class MainActivity : AppCompatActivity() {
             fileCallback = null
         }
 
-    // Android 6-9 (API 23-28) needs a runtime storage permission to write into the public Downloads folder
-    private var pendingSave: Triple<String, String, ByteArray>? = null
-    private val storagePermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            val pending = pendingSave
-            pendingSave = null
-            if (pending != null) {
-                if (granted) writeAndToast(pending.first, pending.second, pending.third)
-                else Toast.makeText(this, "Storage permission denied \u2014 file not saved", Toast.LENGTH_LONG).show()
+    // "Save as" file selector (Storage Access Framework): the user picks the folder and file name.
+    // Works on Android 5.0+ and needs no storage permission.
+    private class PendingExport(val name: String, val mime: String, val bytes: ByteArray)
+    private val exportQueue = ArrayDeque<PendingExport>()
+    private var currentExport: PendingExport? = null
+
+    private val saveAsPicker =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val export = currentExport
+            currentExport = null
+            val uri = if (result.resultCode == RESULT_OK) result.data?.data else null
+            if (export != null) {
+                if (uri != null) writeExport(uri, export)
+                else Toast.makeText(this, "Save cancelled", Toast.LENGTH_SHORT).show()
             }
+            showNextExport()
         }
+
+    private fun queueExport(export: PendingExport) {
+        exportQueue.addLast(export)
+        if (currentExport == null) showNextExport()
+    }
+
+    private fun showNextExport() {
+        if (currentExport != null) return
+        val next = exportQueue.removeFirstOrNull() ?: return
+        currentExport = next
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = next.mime
+            putExtra(Intent.EXTRA_TITLE, next.name)
+        }
+        try {
+            saveAsPicker.launch(intent)
+        } catch (e: ActivityNotFoundException) {
+            currentExport = null
+            Toast.makeText(this, "No file manager available to save the file", Toast.LENGTH_LONG).show()
+            showNextExport()
+        }
+    }
+
+    private fun writeExport(uri: Uri, export: PendingExport) {
+        try {
+            contentResolver.openOutputStream(uri, "wt")?.use { it.write(export.bytes) }
+                ?: throw IllegalStateException("Could not open the selected file")
+            Toast.makeText(this, "Saved: ${export.name}", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Save failed: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -188,61 +218,16 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    /** Receives files the web app "downloads" (Blob/data URLs) and writes them to Downloads. */
+    /** Receives files the web app "downloads" (Blob/data URLs) and opens the Save-as file selector. */
     inner class DownloadBridge {
         @JavascriptInterface
         fun saveBase64(fileName: String, mime: String, base64: String) {
             val bytes = try { Base64.decode(base64, Base64.DEFAULT) } catch (e: Exception) { return }
             val safe = fileName.replace(Regex("[\\\\/:*?\"<>|]"), "_").ifBlank { "download.bin" }
-            val type = mime.ifBlank { "application/octet-stream" }
-            runOnUiThread {
-                val needsPermission = Build.VERSION.SDK_INT in Build.VERSION_CODES.M..Build.VERSION_CODES.P &&
-                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
-                    PackageManager.PERMISSION_GRANTED
-                if (needsPermission) {
-                    pendingSave = Triple(safe, type, bytes)
-                    storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                } else {
-                    writeAndToast(safe, type, bytes)
-                }
-            }
-        }
-    }
-
-    private fun writeAndToast(name: String, mime: String, bytes: ByteArray) {
-        try {
-            val where = saveToDownloads(name, mime, bytes)
-            Toast.makeText(this, "Saved: $where", Toast.LENGTH_LONG).show()
-        } catch (e: Exception) {
-            Toast.makeText(this, "Save failed: ${e.message}", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    private fun saveToDownloads(name: String, mime: String, bytes: ByteArray): String {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val values = ContentValues().apply {
-                put(MediaStore.Downloads.DISPLAY_NAME, name)
-                put(MediaStore.Downloads.MIME_TYPE, mime)
-                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-            }
-            val resolver = contentResolver
-            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                ?: throw IllegalStateException("Could not create file")
-            resolver.openOutputStream(uri)?.use { it.write(bytes) }
-            return "Downloads/$name"
-        } else {
-            val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            dir.mkdirs()
-            var file = File(dir, name)
-            var n = 1
-            while (file.exists()) {
-                val dot = name.lastIndexOf('.')
-                val base = if (dot > 0) name.substring(0, dot) else name
-                val ext = if (dot > 0) name.substring(dot) else ""
-                file = File(dir, "$base ($n)$ext"); n++
-            }
-            FileOutputStream(file).use { it.write(bytes) }
-            return "Downloads/${file.name}"
+            val lower = safe.lowercase()
+            // .tap/.tzx must stay "binary" so the file manager does not append another extension
+            val type = if (lower.endsWith(".tap") || lower.endsWith(".tzx") || mime.isBlank()) "application/octet-stream" else mime
+            runOnUiThread { queueExport(PendingExport(safe, type, bytes)) }
         }
     }
 
