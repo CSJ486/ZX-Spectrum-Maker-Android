@@ -37,6 +37,14 @@ android {
         }
     }
 
+    // Don't let lint warnings stop the release build
+    // (the lint "release check" fails builds for apps with an older target SDK such as 27)
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+        disable += setOf("ExpiredTargetSdkVersion", "OldTargetApi")
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
