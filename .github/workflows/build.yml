@@ -21,6 +21,35 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      # Finds the Gradle project even if the files were uploaded inside a sub-folder,
+      # and explains clearly if a file is in the wrong place.
+      - name: Find and check project layout
+        run: |
+          echo "Repository contents:"
+          find . -maxdepth 3 -not -path './.git/*' -not -path './.git' | sort | head -80
+          SETTINGS=$(find . -maxdepth 3 -not -path './.git/*' \( -name settings.gradle.kts -o -name settings.gradle \) | head -1)
+          if [ -z "$SETTINGS" ]; then
+            echo "::error::No settings.gradle.kts found. Upload the files from the project zip (settings.gradle.kts, build.gradle.kts, app/...) to the repository."
+            exit 1
+          fi
+          DIR=$(dirname "$SETTINGS")
+          echo "Gradle project folder: $DIR"
+          echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
+          cd "$DIR"
+          if [ ! -f app/build.gradle.kts ]; then
+            echo "::error::app/build.gradle.kts is missing. It must be inside the 'app' folder."
+            exit 1
+          fi
+          if [ ! -f build.gradle.kts ] || ! grep -q "apply false" build.gradle.kts; then
+            echo "::error::The top-level build.gradle.kts is wrong. It must be the short file with 'version ... apply false' lines. The long file with android { } belongs in app/build.gradle.kts."
+            exit 1
+          fi
+          if [ ! -f app/src/main/AndroidManifest.xml ]; then
+            echo "::error::app/src/main/AndroidManifest.xml is missing."
+            exit 1
+          fi
+          echo "Layout looks good."
+
       # GitHub's ubuntu runners already include the Android SDK.
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
@@ -31,9 +60,8 @@ jobs:
           gradle-version: '8.9'
 
       # Signing key for the release APK.
-      # Best: add repository secrets KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
-      # (see README). If they are missing, a throw-away key is generated so the APK is still installable,
-      # but every build then has a different signature (you must uninstall before installing the next one).
+      # Best: add repository secrets KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD (see README).
+      # If they are missing, a throw-away key is generated so the APK is still installable.
       - name: Prepare signing key
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -61,26 +89,52 @@ jobs:
           fi
           echo "KEYSTORE_FILE=$KS" >> "$GITHUB_ENV"
 
-      - name: Build debug and release APKs
-        run: gradle assembleDebug assembleRelease --stacktrace
+      - name: Build debug APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: gradle assembleDebug --stacktrace
+
+      # Release is a separate step so the debug APK is still delivered if only the release part fails
+      - name: Build release APK
+        id: release
+        continue-on-error: true
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: gradle assembleRelease --stacktrace
 
       - name: Verify release signature
+        if: steps.release.outcome == 'success'
+        continue-on-error: true
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
           "$APKSIGNER" verify --verbose app/build/outputs/apk/release/app-release.apk
 
       - name: Upload APKs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ZXTapeLoader-apks
           path: |
-            app/build/outputs/apk/debug/app-debug.apk
-            app/build/outputs/apk/release/app-release.apk
-          if-no-files-found: error
+            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: warn
+
+      - name: Upload build reports (for troubleshooting)
+        if: failure() || steps.release.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-reports
+          path: ${{ env.PROJECT_DIR }}/app/build/reports
+          if-no-files-found: ignore
 
       # Pushing a tag such as v1.5.2.9 also publishes the APK on the repository's Releases page
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && steps.release.outcome == 'success'
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/release/app-release.apk
+          files: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/release/app-release.apk
+
+      - name: Fail the job if the release build failed
+        if: steps.release.outcome == 'failure'
+        run: |
+          echo "::error::The release APK failed to build (debug APK was still built). See the 'Build release APK' step."
+          exit 1
